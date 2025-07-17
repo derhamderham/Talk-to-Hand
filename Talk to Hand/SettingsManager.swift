@@ -11,11 +11,6 @@ import Security
 class SettingsManager: ObservableObject {
     static let shared = SettingsManager()
     
-    // Persisted model name
-    var modelName: String {
-        get { UserDefaults.standard.string(forKey: UserDefaultsKeys.modelName) ?? "Menlo:Jan-nano-128k-gguf:jan-nano-128k-Q8_0.gguf" }
-        set { UserDefaults.standard.set(newValue, forKey: UserDefaultsKeys.modelName) }
-    }
 
     // Models discovered from /v1/models
     @Published var availableModels: [String] = []
@@ -58,7 +53,11 @@ class SettingsManager: ObservableObject {
         get { UserDefaults.standard.string(forKey: UserDefaultsKeys.serverURL) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: UserDefaultsKeys.serverURL) }
     }
-
+    // MARK: - modelName (stored in UserDefaults)
+    var modelName: String {
+        get { UserDefaults.standard.string(forKey: UserDefaultsKeys.modelName) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: UserDefaultsKeys.modelName) }
+    }
     // MARK: - API Key (stored in Keychain)
     var apiKey: String {
         get { getFromKeychain(key: KeychainKeys.apiKey) ?? "" }

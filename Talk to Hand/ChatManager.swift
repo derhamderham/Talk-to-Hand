@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import CoreData
 
 @MainActor
 class ChatManager: ObservableObject {
@@ -32,7 +33,18 @@ class ChatManager: ObservableObject {
     @Published var modelName: String {
         didSet { SettingsManager.shared.modelName = modelName }
     }
-
+    
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
+            if let serverTrust = challenge.protectionSpace.serverTrust {
+                let credential = URLCredential(trust: serverTrust)
+                completionHandler(.useCredential, credential)
+                return
+            }
+        }
+        completionHandler(.performDefaultHandling, nil)
+    }
+    
     private let session = URLSession.shared
 
     init() {
@@ -94,7 +106,6 @@ class ChatManager: ObservableObject {
         request.timeoutInterval = 120
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("localhost:1337", forHTTPHeaderField: "Host")
 
         let requestBody = LLMAPIRequest(
             model: modelName,

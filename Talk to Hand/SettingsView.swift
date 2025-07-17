@@ -5,7 +5,6 @@
 //  Created by derham on 7/12/25.
 //
 
-
 import SwiftUI
 
 struct SettingsView: View {
@@ -23,47 +22,27 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                     SecureField("API Key", text: $chatManager.apiKey)
                         .autocorrectionDisabled()
-                    modelPickerView
-                } header: {
-                    Text("Server Configuration")
+                    TextField("Model Name", text: $chatManager.modelName)
+                        .autocorrectionDisabled()
                 }
-
+                
                 Section("Actions") {
-                    Button("Clear Chat History") { chatManager.clearMessages() }
-                        .foregroundColor(.red)
+                    Button("Clear Chat History") {
+                        chatManager.clearMessages()
+                    }
+                    .foregroundColor(.red)
                 }
             }
             .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        dismiss()
+                    }
                 }
             }
             .onAppear {
                 selectedModel = settingsManager.modelName
-            }
-        }
-    }
-    @ViewBuilder
-    private var modelPickerView: some View {
-        if !settingsManager.availableModels.isEmpty {
-            Picker("Model Name", selection: $selectedModel) {
-                ForEach(settingsManager.availableModels, id: \.self) { model in
-                    Text(model).tag(model)
-                }
-            }
-            .onChange(of: selectedModel) {
-                settingsManager.modelName = selectedModel
-                chatManager.modelName = selectedModel
-            }
-        } else {
-            Button("Fetch Model List") {
-                Task {
-                    await settingsManager.fetchAvailableModels(
-                        serverURL: chatManager.serverURL,
-                        apiKey: chatManager.apiKey
-                    )
-                }
             }
         }
     }
