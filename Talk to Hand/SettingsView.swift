@@ -8,42 +8,89 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var chatManager: ChatManager
-    @ObservedObject private var settingsManager = SettingsManager.shared
+    @ObservedObject var chatManager: ChatManager          // still needed for clear history, etc.
+    @ObservedObject private var settings = SettingsManager.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedModel: String = ""
-
+    
+    @State private var serverURLTemp : String = ""
+    @State private var apiKeyTemp    : String = ""
+    
     var body: some View {
         NavigationView {
             Form {
-                Section {
-                    TextField("Server URL", text: $chatManager.serverURL)
+                
+                // MARK: – Server / API key inputs (kept as plain text)
+                Section(header: Text("Connection")) {
+                    TextField("Server URL", text: $serverURLTemp)
                         .textContentType(.URL)
                         .autocorrectionDisabled()
-                    SecureField("API Key", text: $chatManager.apiKey)
+                    SecureField("API Key", text: $apiKeyTemp)
                         .autocorrectionDisabled()
-                    TextField("Model Name", text: $chatManager.modelName)
-                        .autocorrectionDisabled()
+                    
+                    // Save button to propagate changes *and* trigger fetch
+                    Button("Save & Refresh Models") {
+                        settings.serverURL = serverURLTemp
+                        settings.apiKey    = apiKeyTemp
+                        Task { await loadModels() }
+                    }
                 }
                 
-                Section("Actions") {
-                    Button("Clear Chat History") {
-                        chatManager.clearMessages()
+                // MARK: – Model picker
+                Section(header: Text("Model")) {
+                    if settings.isFetching {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                    } else if settings.availableModels.isEmpty {
+                        Text("No models available")
+                            .foregroundColor(.secondary)
+                    } else {
+                        // Use NavigationLink style instead of MenuPickerStyle
+                        Picker("Select Model", selection: $settings.modelName) {
+                            ForEach(settings.availableModels, id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        }
+                        .pickerStyle(NavigationLinkPickerStyle()) // Changed this line
+                        
+                        // Show currently selected model clearly
+                        HStack {
+                            Text("Selected:")
+                            Spacer()
+                            Text(settings.modelName.isEmpty ? "None" : settings.modelName)
+                                .foregroundColor(.secondary)
+                        }
                     }
-                    .foregroundColor(.red)
+                }
+                
+                // MARK: – Other actions
+                Section(header: Text("History")) {
+                    Button(role: .destructive) {
+                        chatManager.clearMessages()
+                    } label: {
+                        Label("Clear Chat History", systemImage: "trash")
+                    }
                 }
             }
             .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
+                    Button("Done") { dismiss() }
                 }
             }
+            // Populate the temp fields on first appearance
             .onAppear {
-                selectedModel = settingsManager.modelName
+                serverURLTemp = settings.serverURL
+                apiKeyTemp    = settings.apiKey
+                Task { await loadModels() }      // initial fetch
             }
         }
+    }
+    
+
+    // MARK: – Helper to call the async fetch
+    
+    @MainActor
+    private func loadModels() async {
+        await settings.fetchAvailableModels()  // No parameters needed
     }
 }

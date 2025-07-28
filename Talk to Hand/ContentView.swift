@@ -35,30 +35,90 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Settings") { isShowingSettings = true }
+                    Button {
+                        isShowingSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
                 }
             }
             .sheet(isPresented: $isShowingSettings) {
                 SettingsView(chatManager: chatManager)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
+            // Keep conversation in focus
+            .onAppear {
+                chatManager.loadInitialMessages()
+                // Auto-focus text field when view appears
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    isTextFieldFocused = true
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                // Re-focus when app comes back to foreground
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    isTextFieldFocused = true
+                }
             }
         }
-        .onAppear { chatManager.loadInitialMessages() }
     }
         
     private func sendMessage() {
         guard !messageText.isEmpty else { return }
         let userMessage = messageText
         messageText = ""
-        isTextFieldFocused = false
+        
+        // Keep focus on input after sending message
         Task {
             await chatManager.sendMessage(userMessage)
+            // Re-focus after message is sent for continuous conversation
+            await MainActor.run {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isTextFieldFocused = true
+                }
+            }
+        }
+    }
+}
+
+struct TypingBubble: View {
+    @State private var bounce = false
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                HStack(spacing: 4) {
+                    ForEach(0..<3) { index in
+                        Circle()
+                            .fill(Color.secondary.opacity(0.8))
+                            .frame(width: 8, height: 8)
+                            .offset(y: bounce ? -6 : 0)
+                            .animation(
+                                Animation
+                                    .easeInOut(duration: 0.6)
+                                    .repeatForever()
+                                    .delay(Double(index) * 0.18),
+                                value: bounce
+                            )
+                    }
+                }
+                .padding(12)
+                .background(Color(.systemGray5))
+                .cornerRadius(16)
+                .frame(maxWidth: UIScreen.main.bounds.width * 0.75, alignment: .leading)
+            }
+            Spacer()
+        }
+        .onAppear {
+            bounce = true
         }
     }
 }
 
 private struct MessageList: View {
     @ObservedObject var chatManager: ChatManager
-    var isTextFieldFocused: Binding<Bool> // <-- Accept focus as a binding
+    var isTextFieldFocused: Binding<Bool>
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -71,12 +131,9 @@ private struct MessageList: View {
                         MessageBubble(message: message)
                             .id(message.id)
                     }
-                    if chatManager.isBotTyping {
-                        HStack(alignment: .bottom) {
-                            TypingBubble()
-                            Spacer()
-                        }
-                        .transition(.opacity)
+                    if chatManager.isBotTyping && !chatManager.isStreaming {
+                        TypingBubble()
+                            .id("typing-bubble")
                     }
                 }
                 .padding()
@@ -86,11 +143,29 @@ private struct MessageList: View {
                 await chatManager.loadMoreHistory()
             }
             .onTapGesture {
-                isTextFieldFocused.wrappedValue = false // Dismiss keyboard
+                // Re-focus instead of dismissing keyboard to keep conversation flow
+                isTextFieldFocused.wrappedValue = true
             }
-            .onChange(of: $chatManager.messages.count) {
-                if let lastMessage = $chatManager.messages.last, !chatManager.isLoadingHistory {
+            .onChange(of: chatManager.messages.count) {
+                // Auto-scroll to latest message
+                if let lastMessage = chatManager.messages.last, !chatManager.isLoadingHistory {
                     withAnimation(.easeOut(duration: 0.3)) {
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                    }
+                }
+            }
+            .onChange(of: chatManager.isBotTyping) {
+                // Auto-scroll to typing bubble when bot starts typing
+                if chatManager.isBotTyping {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        proxy.scrollTo("typing-bubble", anchor: .bottom)
+                    }
+                }
+            }
+            .onChange(of: chatManager.isStreaming) {
+                // Keep scrolled to bottom during streaming
+                if chatManager.isStreaming, let lastMessage = chatManager.messages.last {
+                    withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo(lastMessage.id, anchor: .bottom)
                     }
                 }
@@ -135,7 +210,19 @@ private struct InputArea: View {
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .lineLimit(1...4)
                     .focused(isTextFieldFocused)
-                    .onSubmit { sendMessage() }
+                    .onSubmit {
+                        sendMessage()
+                    }
+                    .submitLabel(.send)
+                    // Keep focus when streaming starts
+                    .onChange(of: chatManager.isStreaming) {
+                        if chatManager.isStreaming {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                isTextFieldFocused.wrappedValue = true
+                            }
+                        }
+                    }
+                
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title2)

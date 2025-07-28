@@ -27,7 +27,16 @@ struct ChatMessage: Identifiable, Equatable {
 struct LLMAPIRequest: Codable {
     let model: String
     let messages: [LLMMessage]
+    let stream: Bool
+    
+    
+    init(model: String, messages: [LLMMessage], stream: Bool = false) {
+        self.model = model
+        self.messages = messages
+        self.stream = stream
+    }
 }
+
 
 struct LLMMessage: Codable {
     let role: String
